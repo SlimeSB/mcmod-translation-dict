@@ -39,7 +39,46 @@ export default {
       }
 
       const searchColumn = mode === "en2zh" ? "origin_name" : "trans_name";
-      const searchTermFts = `${searchColumn}:${query.trim()}*`;
+
+      // 进阶语法解析
+      function parseAdvancedQuery(raw, column) {
+        let terms = [];
+        let exclude = [];
+        let phrase = null;
+        let pattern = /"([^"]+)"|\S+/g;
+        let match;
+        while ((match = pattern.exec(raw)) !== null) {
+          if (match[1]) {
+            phrase = match[1];
+          } else {
+            let word = match[0];
+            if (word.startsWith("-")) {
+              exclude.push(word.slice(1));
+            } else if (word.endsWith("*")) {
+              terms.push(`${column}:${word.replace(/\*/g, "*")}`);
+            } else if (word.endsWith("+")) {
+              let base = word.slice(0, -1);
+              terms.push(`${column}:${base}*`);
+              exclude.push(base);
+            } else {
+              terms.push(`${column}:${word}`);
+            }
+          }
+        }
+        let fts = [];
+        if (phrase) {
+          fts.push(`${column}:"${phrase}"`);
+        }
+        if (terms.length) {
+          fts.push(...terms);
+        }
+        if (exclude.length) {
+          fts.push(...exclude.map(w => `NOT ${column}:${w}`));
+        }
+        return fts.join(" ");
+      }
+
+      const searchTermFts = parseAdvancedQuery(query.trim(), searchColumn);
       const exactMatchTerm = query.trim();
 
       const cacheKey = new Request(request.url, request);
